@@ -275,7 +275,12 @@ function alignCat(r){const t=(r.remark||"").toLowerCase();
   return{key:"aligned",label:"Aligned"};}
 const n=v=>{const x=Number(v);return isNaN(x)?0:x;};
 function norm(r){
-  const budT=n(r.bud.total),actT=n(r.act.total),gap=budT-actT;
+  // self-healing: if a Total cell is blank/0 in the sheet, sum the role columns instead
+  const budRoles=n(r.bud.sm)+n(r.bud.asm)+n(r.bud.ssa)+n(r.bud.sa)+n(r.bud.oa);
+  const actRoles=n(r.act.sm)+n(r.act.asm)+n(r.act.ssa)+n(r.act.sa)+n(r.act.sapt)+n(r.act.oa);
+  const budT=n(r.bud.total)>0?n(r.bud.total):budRoles;
+  const actT=n(r.act.total)>0?n(r.act.total):actRoles;
+  const gap=budT-actT;
   const fill=budT>0?Math.round(actT/budT*100):0;
   const openRoles={sm:n(r.open.sm),asm:n(r.open.asm),ssa:n(r.open.ssa),sa:n(r.open.sa)+n(r.open.sapt),oa:n(r.open.oa)};
   const openSum=openRoles.sm+openRoles.asm+openRoles.ssa+openRoles.sa+openRoles.oa;
