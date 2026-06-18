@@ -243,6 +243,9 @@
     </ol>
     <input type="text" id="csvUrl" placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv">
     <p style="font-size:12px">Also works with a gviz link: <code>…/gviz/tq?tqx=out:csv&amp;gid=…</code> if the sheet is shared "anyone with the link can view".</p>
+    <h2 style="font-size:15px;margin-top:18px">⚡ Real-time (optional)</h2>
+    <p style="margin:0 0 4px">Paste an Apps Script Web app <code>/exec</code> URL for instant, no-lag updates across all pages:</p>
+    <input type="text" id="rtUrl" placeholder="https://script.google.com/macros/s/…/exec">
     <div class="row-actions">
       <button id="disconnect" class="ghost">Use snapshot only</button>
       <button id="cancelModal" class="ghost">Cancel</button>
@@ -329,6 +332,8 @@ function mapLive(rows){
 async function syncLive(showErr){
   const url=effectiveURL();
   if(!url){RAW=SNAPSHOT.slice();DATA=RAW.map(norm);setSync(false);renderAll();return;}
+  // prefer real-time (Apps Script) if configured
+  if(realtimeURL()){const ok=await loadRealtimeAll();if(ok){setSync(true,RT_STATUS.when+' · real-time');renderAll();return;}}
   try{
     const res=await fetch(url,{cache:'no-store'});
     if(!res.ok)throw new Error('HTTP '+res.status);
@@ -482,22 +487,50 @@ const LIVE_MAP={
 };
 const SNAP_SECTIONS=JSON.parse(JSON.stringify(SECTIONS)); // offline fallback
 const SECTION_STATUS={}; // page -> {live, when}
+function mapSectionRows(page,rows){
+  const m=LIVE_MAP[page];const f=rows.filter(m.test);
+  return f.map(c=>{const o={};m.cols.forEach((k,i)=>{o[k]=m.num.includes(k)?numify(c[i]):String(c[i]==null?'':c[i]).trim();});return o;});
+}
 async function loadSectionLive(page){
   const gid=SECTION_GIDS[page], m=LIVE_MAP[page];
   if(!gid||!m){return false;}
   if(effectiveURL()===null){SECTIONS[page]=JSON.parse(JSON.stringify(SNAP_SECTIONS[page]));SECTION_STATUS[page]={live:false};return false;}
+  // real-time path (one fetch covers every page)
+  if(realtimeURL()){const ok=await loadRealtimeAll();if(ok)return true;}
   try{
     const r=await fetch(sectionURL(gid),{cache:'no-store'});
     if(!r.ok)throw new Error('HTTP '+r.status);
-    const rows=parseCSV(await r.text()).filter(m.test);
-    if(!rows.length)throw new Error('no data rows');
-    SECTIONS[page]=rows.map(c=>{const o={};m.cols.forEach((k,i)=>{o[k]=m.num.includes(k)?numify(c[i]):String(c[i]==null?'':c[i]).trim();});return o;});
+    const parsed=parseCSV(await r.text());
+    if(!parsed.filter(m.test).length)throw new Error('no data rows');
+    SECTIONS[page]=mapSectionRows(page,parsed);
     SECTION_STATUS[page]={live:true,when:new Date().toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})};
     return true;
   }catch(e){console.error('[HR] live load failed for',page,':',e.message);SECTION_STATUS[page]={live:false};SECTIONS[page]=JSON.parse(JSON.stringify(SNAP_SECTIONS[page]));return false;}
 }
 function genStatusText(page){const s=SECTION_STATUS[page];
-  return s&&s.live?`· 🟢 live as of ${s.when}`:`· snapshot as of ${SNAPSHOT_DATE}`;}
+  if(s&&s.live)return `· 🟢 ${s.rt?'real-time':'live'} as of ${s.when}`;
+  return `· snapshot as of ${SNAPSHOT_DATE}`;}
+
+/* ---- real-time source: Apps Script web app (reads live sheet, browser-readable) ---- */
+const RT_KEY='kushals_hr_rturl';
+const REALTIME_URL=''; /* baked-in /exec URL goes here when provided */
+const SUMMARY_GID='1973222730';
+function realtimeURL(){if(effectiveURL()===null)return null;const u=(localStorage.getItem(RT_KEY)||REALTIME_URL||'').trim();return u||null;}
+const rtTime=iso=>{try{return new Date(iso).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}catch(_){return '';}};
+let RT_STATUS={on:false};
+async function loadRealtimeAll(){
+  const url=realtimeURL();if(!url)return false;
+  try{
+    const res=await fetch(url,{cache:'no-store',redirect:'follow'});
+    if(!res.ok)throw new Error('HTTP '+res.status);
+    const j=await res.json();const sh=(j&&j.sheets)||{};
+    const when=rtTime(j&&j.ts);
+    if(sh[SUMMARY_GID]){const mp=mapLive(sh[SUMMARY_GID]);if(mp.length){RAW=mp;DATA=RAW.map(norm);}}
+    Object.keys(SECTION_GIDS).forEach(page=>{const gid=SECTION_GIDS[page];if(sh[gid]){const mp=mapSectionRows(page,sh[gid]);if(mp.length){SECTIONS[page]=mp;SECTION_STATUS[page]={live:true,when:when,rt:true};}}});
+    RT_STATUS={on:true,when:when};
+    return true;
+  }catch(e){console.error('[HR] real-time fetch failed:',e.message);RT_STATUS={on:false};return false;}
+}
 const MONTHS={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
 const fy=y=>{y=+y;return y<100?2000+y:y;};
 function pdate(s){if(!s)return null;s=String(s).trim();let m;
@@ -781,11 +814,18 @@ function renderGenericBody(){
 document.getElementById('clearF').onclick=()=>{['fRM','fCM','fState','fStatus','fSearch'].forEach(id=>document.getElementById(id).value='');renderAll();};
 document.querySelectorAll('#allTbl th').forEach(th=>{th.onclick=()=>{const k=th.dataset.k;if(!k)return;
   if(sortKey===k)sortDir*=-1;else{sortKey=k;sortDir=['store','code','rm','cm','state','align'].includes(k)?1:-1;}renderTable(applyFilters());};});
-document.getElementById('refreshBtn').onclick=()=>syncLive(true);
-document.getElementById('connectBtn').onclick=()=>{const s=localStorage.getItem(LS_URL);document.getElementById('csvUrl').value=(s&&s!==SNAPSHOT_ONLY)?s:DEFAULT_CSV_URL;document.getElementById('modal').classList.add('show');};
+document.getElementById('refreshBtn').onclick=()=>refreshCurrent(true);
+document.getElementById('connectBtn').onclick=()=>{const s=localStorage.getItem(LS_URL);document.getElementById('csvUrl').value=(s&&s!==SNAPSHOT_ONLY)?s:DEFAULT_CSV_URL;document.getElementById('rtUrl').value=localStorage.getItem(RT_KEY)||REALTIME_URL||'';document.getElementById('modal').classList.add('show');};
 document.getElementById('cancelModal').onclick=()=>document.getElementById('modal').classList.remove('show');
-document.getElementById('saveUrl').onclick=()=>{const u=document.getElementById('csvUrl').value.trim();if(u)localStorage.setItem(LS_URL,u);else localStorage.removeItem(LS_URL);document.getElementById('modal').classList.remove('show');syncLive(true);};
+document.getElementById('saveUrl').onclick=()=>{
+  const u=document.getElementById('csvUrl').value.trim();if(u)localStorage.setItem(LS_URL,u);else localStorage.removeItem(LS_URL);
+  const rt=document.getElementById('rtUrl').value.trim();if(rt)localStorage.setItem(RT_KEY,rt);else localStorage.removeItem(RT_KEY);
+  document.getElementById('modal').classList.remove('show');refreshCurrent(true);};
 document.getElementById('disconnect').onclick=()=>{localStorage.setItem(LS_URL,SNAPSHOT_ONLY);document.getElementById('modal').classList.remove('show');syncLive(false);};
+function refreshCurrent(showErr){
+  if(CURRENT_PAGE==='muster')syncLive(showErr);
+  else renderGeneric(CURRENT_PAGE);
+}
 let CURRENT_PAGE='muster';
 document.querySelectorAll('#nav .tab').forEach(t=>{t.onclick=()=>{
   const page=t.dataset.page;CURRENT_PAGE=page;
