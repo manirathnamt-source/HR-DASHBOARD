@@ -513,7 +513,7 @@ function genStatusText(page){const s=SECTION_STATUS[page];
 
 /* ---- real-time source: Apps Script web app (reads live sheet, browser-readable) ---- */
 const RT_KEY='kushals_hr_rturl';
-const REALTIME_URL=''; /* baked-in /exec URL goes here when provided */
+const REALTIME_URL='https://script.google.com/macros/s/AKfycbylojsdWOQkkluhpXxLrfqNPxxmt1DSXkk5vHCw-teTeW1_VRKOAtSAeaXLwu_J243c/exec'; /* Apps Script web app — real-time, no cache */
 const SUMMARY_GID='1973222730';
 function realtimeURL(){if(effectiveURL()===null)return null;const u=(localStorage.getItem(RT_KEY)||REALTIME_URL||'').trim();return u||null;}
 const rtTime=iso=>{try{return new Date(iso).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});}catch(_){return '';}};
