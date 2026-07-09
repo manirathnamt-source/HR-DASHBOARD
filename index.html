@@ -389,10 +389,13 @@ function stateBreak(F){const ka=F.filter(d=>d.state==='Karnataka').length;return
 function renderCards(F){
   const bud=sum(F,d=>d.budT),act=sum(F,d=>d.actT),gap=bud-act,open=sum(F,d=>d.openSum);
   const fill=bud?Math.round(act/bud*100):0,full=F.filter(d=>d.gap<=0).length,under=F.filter(d=>d.gap>0).length;
+  // Active count = live headcount from the Active roster (respects Page-1 store filters)
+  const codes=new Set(F.map(d=>d.code));
+  const activeCount=(SECTIONS.active||[]).filter(e=>codes.has((e.code||'').trim())).length;
   const c=[
     ['accent','Stores',F.length,stateBreak(F)],
     ['accent','Budgeted',bud,'sanctioned positions'],
-    ['','Actual on roll',act,'currently staffed'],
+    ['','Active count',activeCount,'live from Active roster'],
     ['','Fill rate',fill+'%',fillTag(fill)],
     ['danger','Total gap',gap,`${under} stores below budget`],
     ['danger','Open positions',open,'active vacancies'],
