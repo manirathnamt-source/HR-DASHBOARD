@@ -588,28 +588,48 @@ function genderFromRoster(){
 }
 /* data source for a generic page — gender is derived from the roster, not its tab */
 function dataFor(page){return page==='gender'?genderFromRoster():SECTIONS[page];}
-/* per-store: budget (Summary) vs active headcount (roster in F) */
+/* map a designation to a budgeted store role (null = regional/non-store, excluded) */
+const DESIG_BUCKET=d=>{d=(d||'').toLowerCase();
+  if(d.includes('assistant store'))return 'asm';
+  if(d.includes('store manager'))return 'sm';
+  if(d.includes('senior style'))return 'ssa';
+  if(d.includes('style associate'))return 'sa';
+  if(d.includes('office'))return 'oa';
+  return null;};
+const ROLES=['sm','asm','ssa','sa','oa'];
+/* per-store: budget (Summary per role) vs active (roster per role), with designation-wise gap */
 function activeStoreRollup(F){
-  const heads={},nm={};
-  F.forEach(e=>{const c=(e.code||'').trim();if(!c)return;heads[c]=(heads[c]||0)+1;nm[c]=e.branch;});
-  const bm=storeBudgetMap();
-  const rows=Object.keys(heads).map(code=>{const b=bm[code];const budget=b?b.budget:null;const head=heads[code];
-    return {code,store:(b&&b.store)||nm[code]||code,budget,head,gap:budget==null?null:budget-head,fill:budget?Math.round(head/budget*100):null};});
-  return rows.sort((a,b)=>(b.gap==null?-Infinity:b.gap)-(a.gap==null?-Infinity:a.gap)||String(a.store).localeCompare(b.store));
+  // budget per role, per store (from Summary/DATA)
+  const bm={};(DATA||[]).forEach(d=>{if(d.code)bm[d.code]={store:d.store,bud:d.bud||{}};});
+  // active per role, per store (from filtered roster F; excludes non-store roles)
+  const ar={},nm={};
+  F.forEach(e=>{const c=(e.code||'').trim();const b=DESIG_BUCKET(e.desig);nm[c]=e.branch;if(!c||!b)return;(ar[c]=ar[c]||{sm:0,asm:0,ssa:0,sa:0,oa:0})[b]++;});
+  const rows=Object.keys(ar).map(code=>{
+    const b=bm[code];const bud=(b&&b.bud)||{};const act=ar[code];
+    const roleGap={};let budTot=0,actTot=0;
+    ROLES.forEach(r=>{const bg=Number(bud[r])||0,ag=act[r]||0;roleGap[r]=ag-bg;budTot+=bg;actTot+=ag;});
+    return {code,store:(b&&b.store)||nm[code]||code,budTot,actTot,gap:actTot-budTot,roleGap,hasBudget:!!b};
+  });
+  return rows.sort((a,b)=>a.gap-b.gap||String(a.store).localeCompare(b.store));
+}
+function roleGapCell(v){
+  if(v<0)return `<span class="hl ${v<=-3?'hl-bad':'hl-warn'}">${v}</span>`;
+  if(v>0)return `<span class="hl hl-nt">+${v}</span>`;
+  return '<span style="color:var(--mut)">·</span>';
 }
 function activeStoreRollupPanel(F){
   const rows=activeStoreRollup(F);
-  const unmatched=rows.filter(r=>r.budget==null).length;
   const body=rows.map(r=>{
-    const gtag=gapChip(r.gap);
-    const fcls=r.fill==null?'':r.fill>=100?'hl-good':r.fill>=90?'hl-warn':'hl-bad';
-    return `<tr><td>${esc(r.store)}</td><td class="num">${r.budget==null?'—':r.budget}</td>
-      <td class="num strong">${r.head}</td><td class="num">${gtag}</td>
-      <td class="num">${r.fill==null?'—':`<span class="hl ${fcls}">${r.fill}%</span>`}</td></tr>`;
+    const roleCells=ROLES.map(k=>`<td class="num">${roleGapCell(r.roleGap[k])}</td>`).join('');
+    return `<tr><td>${esc(r.store)}</td><td class="num">${r.budTot}</td>
+      <td class="num strong">${r.actTot}</td><td class="num">${gapChip(r.budTot-r.actTot)}</td>${roleCells}</tr>`;
   }).join('');
-  return `<div class="panel" data-full="1"><h3>Store-wise: budget vs active headcount <span class="muted">— roster counted against Summary budget</span></h3>
-    <div class="scrollx sm"><table class="data"><thead><tr><th>Store</th><th class="num">Budget</th><th class="num">Active</th><th class="num">Gap</th><th class="num">Fill%</th></tr></thead><tbody>${body}</tbody></table></div>
-    <div class="footnote">Budget from the Summary tab; Active = employees on this roster per store. Gap = Budget − Active.${unmatched?` ${unmatched} store(s) not found in Summary budget.`:''}</div></div>`;
+  return `<div class="panel" data-full="1"><h3>Store-wise: budget vs active — gap by designation <span class="muted">— Budget (Summary) vs Active (roster); negative = short</span></h3>
+    <div class="scrollx"><table class="data"><thead><tr>
+      <th>Store</th><th class="num">Budget</th><th class="num">Active</th><th class="num">Gap</th>
+      <th class="num">SM</th><th class="num">ASM</th><th class="num">SSA</th><th class="num">SA</th><th class="num">OA</th>
+    </tr></thead><tbody>${body}</tbody></table></div>
+    <div class="footnote">Gap = Active − Budget (negative = short, positive = over). Role columns show the gap per designation. Store-budgeted roles only — regional roles (e.g. Cluster Manager) excluded.</div></div>`;
 }
 
 const PAGE_CONFIGS = {
