@@ -556,6 +556,32 @@ const shortDesig=d=>DESIG_SHORT[d]||d;
 function genderTiles(rows){const f=cnt(rows,r=>/^f/i.test(r.gender)),m=cnt(rows,r=>/^m/i.test(r.gender));
   return [{n:f,label:'Female',cls:'nt'},{n:m,label:'Male',cls:'gl'}];}
 
+/* store budget map from the Summary/Page-1 data (DATA), keyed by store code */
+function storeBudgetMap(){const m={};(DATA||[]).forEach(d=>{if(d.code)m[d.code]={budget:d.budT,store:d.store};});return m;}
+/* per-store: budget (Summary) vs active headcount (roster in F) */
+function activeStoreRollup(F){
+  const heads={},nm={};
+  F.forEach(e=>{const c=(e.code||'').trim();if(!c)return;heads[c]=(heads[c]||0)+1;nm[c]=e.branch;});
+  const bm=storeBudgetMap();
+  const rows=Object.keys(heads).map(code=>{const b=bm[code];const budget=b?b.budget:null;const head=heads[code];
+    return {code,store:(b&&b.store)||nm[code]||code,budget,head,gap:budget==null?null:budget-head,fill:budget?Math.round(head/budget*100):null};});
+  return rows.sort((a,b)=>(b.gap==null?-Infinity:b.gap)-(a.gap==null?-Infinity:a.gap)||String(a.store).localeCompare(b.store));
+}
+function activeStoreRollupPanel(F){
+  const rows=activeStoreRollup(F);
+  const unmatched=rows.filter(r=>r.budget==null).length;
+  const body=rows.map(r=>{
+    const gtag=r.gap==null?'<span style="color:var(--mut)">—</span>':r.gap>0?`<span class="hl hl-warn">+${r.gap}</span>`:r.gap<0?`<span class="hl hl-nt">${r.gap}</span>`:`<span class="hl hl-good">0</span>`;
+    const fcls=r.fill==null?'':r.fill>=100?'hl-good':r.fill>=90?'hl-warn':'hl-bad';
+    return `<tr><td>${esc(r.store)}</td><td class="num">${r.budget==null?'—':r.budget}</td>
+      <td class="num strong">${r.head}</td><td class="num">${gtag}</td>
+      <td class="num">${r.fill==null?'—':`<span class="hl ${fcls}">${r.fill}%</span>`}</td></tr>`;
+  }).join('');
+  return `<div class="panel" data-full="1"><h3>Store-wise: budget vs active headcount <span class="muted">— roster counted against Summary budget</span></h3>
+    <div class="scrollx sm"><table class="data"><thead><tr><th>Store</th><th class="num">Budget</th><th class="num">Active</th><th class="num">Gap</th><th class="num">Fill%</th></tr></thead><tbody>${body}</tbody></table></div>
+    <div class="footnote">Budget from the Summary tab; Active = employees on this roster per store. Gap = Budget − Active.${unmatched?` ${unmatched} store(s) not found in Summary budget.`:''}</div></div>`;
+}
+
 const PAGE_CONFIGS = {
   active:{
     title:'Active Employees', data:'active',
@@ -573,6 +599,7 @@ const PAGE_CONFIGS = {
       ];},
     panels:F=>{const byD={};F.forEach(r=>{const k=shortDesig(r.desig);byD[k]=(byD[k]||0)+1;});
       return [
+        activeStoreRollupPanel(F),
         tilesPanel('Headcount by designation', tilesFromCounts(byD,(v,mx)=>v===mx?'nt':'gl'),'SM · ASM · SSA · SA · SA-PT · OA'),
         tilesPanel('Headcount by Regional Manager', tilesFromCounts(countBy(F,'rm'),(v,mx)=>'gl')),
       ];},
@@ -789,9 +816,11 @@ function renderGenericBody(){
   // KPIs
   document.getElementById('gCards').innerHTML=cfg.kpis(F).map(([cls,k,v,s])=>
     `<div class="card ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s||''}</div></div>`).join('');
-  // panels (chunk into rows of 2)
-  const ps=cfg.panels?cfg.panels(F):[];let ph='';
-  for(let i=0;i<ps.length;i+=2){ph+=`<div class="grid2">${ps[i]||''}${ps[i+1]||''}</div>`;}
+  // panels: full-width ones (data-full="1") span the row; the rest pair into grid2
+  const ps=cfg.panels?cfg.panels(F):[];let ph='',pair=[];
+  const emitPair=()=>{if(pair.length){ph+=`<div class="grid2">${pair[0]||''}${pair[1]||''}</div>`;pair=[];}};
+  ps.forEach(p=>{if(/data-full="1"/.test(p)){emitPair();ph+=`<div class="grid2" style="grid-template-columns:1fr">${p}</div>`;}else{pair.push(p);if(pair.length===2)emitPair();}});
+  emitPair();
   document.getElementById('gPanels').innerHTML=ph;
   // table
   const cols=cfg.columns;
