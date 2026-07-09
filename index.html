@@ -543,11 +543,28 @@ async function loadRealtimeAll(){
     const j=await res.json();const sh=(j&&j.sheets)||{};
     const when=rtTime(j&&j.ts);
     if(sh[SUMMARY_GID]){const mp=mapLive(sh[SUMMARY_GID]);if(mp.length){RAW=mp;DATA=RAW.map(norm);}}
-    Object.keys(SECTION_GIDS).forEach(page=>{const gid=SECTION_GIDS[page];if(sh[gid]){const mp=mapSectionRows(page,sh[gid]);if(mp.length){SECTIONS[page]=mp;SECTION_STATUS[page]={live:true,when:when,rt:true};}}});
+    // Resolve the Active tab by its COLUMNS, not a fixed ID — survives sheet rebuilds
+    const gids={...SECTION_GIDS};const det=detectActiveGid(sh);if(det){gids.active=det;SECTION_GIDS.active=det;}
+    Object.keys(gids).forEach(page=>{const gid=gids[page];if(sh[gid]){const mp=mapSectionRows(page,sh[gid]);if(mp.length){SECTIONS[page]=mp;SECTION_STATUS[page]={live:true,when:when,rt:true};}}});
     enrichActiveRM();
     RT_STATUS={on:true,when:when};
     return true;
   }catch(e){console.error('[HR] real-time fetch failed:',e.message);RT_STATUS={on:false};return false;}
+}
+/* Find the Active roster tab by its columns (largest employee sheet that isn't
+   separations/confirmations/probation) so a rebuilt tab with a new ID still works. */
+function detectActiveGid(sheets){
+  let best=null,bestN=-1;
+  for(const gid of Object.keys(sheets)){
+    const rows=sheets[gid];if(!rows||rows.length<2)continue;
+    const hdr=(rows[0]||[]).map(h=>String(h||'').toLowerCase());
+    const has=s=>hdr.some(h=>h.includes(s));
+    if(!has('employee number')||!has('designation'))continue;          // must be an employee roster
+    if(has('leaving')||has('separation')||has('pendingdays')||has('currently with')||has('confirmation date'))continue; // not exits/confirmations/probation
+    const n=rows.slice(1).filter(c=>/^\d+$/.test(String(c[0]||'').trim())).length;
+    if(n>bestN){bestN=n;best=gid;}
+  }
+  return best;
 }
 /* The Active sheet no longer carries RM/CM — join them from Summary (DATA) by store code */
 function enrichActiveRM(){
