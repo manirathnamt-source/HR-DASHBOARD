@@ -565,6 +565,20 @@ function genderTiles(rows){const f=cnt(rows,r=>/^f/i.test(r.gender)),m=cnt(rows,
 
 /* store budget map from the Summary/Page-1 data (DATA), keyed by store code */
 function storeBudgetMap(){const m={};(DATA||[]).forEach(d=>{if(d.code)m[d.code]={budget:d.budT,store:d.store};});return m;}
+/* Gender diversity computed live from the Active roster (gender per employee, per store) */
+function genderFromRoster(){
+  const g={};
+  (SECTIONS.active||[]).forEach(e=>{
+    const store=(e.branch||e.code||'').trim();if(!store)return;
+    const r=(g[store]=g[store]||{store,female:0,male:0,total:0,cm:e.cm,rm:e.rm});
+    if(/^f/i.test(e.gender))r.female++;else if(/^m/i.test(e.gender))r.male++;
+    r.total++;r.cm=e.cm;r.rm=e.rm;
+  });
+  return Object.values(g).map(r=>({...r,fpct:r.total?Math.round(r.female/r.total*100):0,mpct:r.total?Math.round(r.male/r.total*100):0}))
+    .sort((a,b)=>String(a.store).localeCompare(b.store));
+}
+/* data source for a generic page — gender is derived from the roster, not its tab */
+function dataFor(page){return page==='gender'?genderFromRoster():SECTIONS[page];}
 /* per-store: budget (Summary) vs active headcount (roster in F) */
 function activeStoreRollup(F){
   const heads={},nm={};
@@ -742,7 +756,7 @@ const PAGE_CONFIGS = {
       ['store','Store'],['female','Female',r=>hl(r.female,'hl-nt'),1],['fpct','F%',r=>hl((r.fpct||0)+'%',r.fpct>=50?'hl-good':r.fpct>=33?'hl-warn':'hl-bad'),1],
       ['male','Male',null,1],['mpct','M%',r=>(r.mpct||0)+'%',1],['total','Total',null,1],['cm','CM'],['rm','RM'],
     ],
-    note:'Source: Gender Diversity tab.'
+    note:'Computed live from the Active roster (gender counted per employee, per store).'
   },
   openpos:{
     title:'Open Positions & Recruitment', data:'openpos',
@@ -805,7 +819,7 @@ function renderGeneric(page){
   const cfg=PAGE_CONFIGS[page];
   GEN={page,sortKey:null,sortDir:1};
   document.getElementById('gTitle').innerHTML=`${cfg.title} <small id="gStatus">${genStatusText(page)}</small>`;
-  buildFilters(cfg,SECTIONS[cfg.data]);
+  buildFilters(cfg,dataFor(cfg.data));
   renderGenericBody();
   // pull live data, then refresh this page if still showing
   loadSectionLive(page).then(()=>{
@@ -813,12 +827,12 @@ function renderGeneric(page){
     const st=SECTION_STATUS[page];
     if(st&&st.live)setSync(true,st.when);else setSync(effectiveURL()===null?false:false);
     const gs=document.getElementById('gStatus');if(gs)gs.innerHTML=genStatusText(page);
-    buildFilters(cfg,SECTIONS[cfg.data]);
+    buildFilters(cfg,dataFor(cfg.data));
     renderGenericBody();
   });
 }
 function renderGenericBody(){
-  const cfg=PAGE_CONFIGS[GEN.page];const data=SECTIONS[cfg.data];
+  const cfg=PAGE_CONFIGS[GEN.page];const data=dataFor(cfg.data);
   const F=genFilter(cfg,data);
   // KPIs
   document.getElementById('gCards').innerHTML=cfg.kpis(F).map(([cls,k,v,s])=>
@@ -883,7 +897,7 @@ setSync(false);renderAll();syncLive(false);
 setInterval(()=>{
   if(!effectiveURL())return;
   if(CURRENT_PAGE==='muster')syncLive(false);
-  else loadSectionLive(CURRENT_PAGE).then(()=>{if(GEN.page===CURRENT_PAGE){const gs=document.getElementById('gStatus');if(gs)gs.innerHTML=genStatusText(CURRENT_PAGE);const st=SECTION_STATUS[CURRENT_PAGE];if(st&&st.live)setSync(true,st.when);buildFilters(PAGE_CONFIGS[CURRENT_PAGE],SECTIONS[CURRENT_PAGE]);renderGenericBody();}});
+  else loadSectionLive(CURRENT_PAGE).then(()=>{if(GEN.page===CURRENT_PAGE){const gs=document.getElementById('gStatus');if(gs)gs.innerHTML=genStatusText(CURRENT_PAGE);const st=SECTION_STATUS[CURRENT_PAGE];if(st&&st.live)setSync(true,st.when);buildFilters(PAGE_CONFIGS[CURRENT_PAGE],dataFor(CURRENT_PAGE));renderGenericBody();}});
 },5*60*1000);
 </script>
 </body>
