@@ -174,7 +174,7 @@
       <div class="scrollx sm">
         <table class="data" id="hotTbl">
           <thead><tr>
-            <th>Store</th><th>Cluster Mgr</th><th class="num">Bud</th><th class="num">Act</th>
+            <th>Store</th><th>Cluster Mgr</th><th class="num">Bud</th><th class="num">Active</th>
             <th class="num">Gap</th><th class="num">Fill%</th><th>Open roles</th>
           </tr></thead>
           <tbody></tbody>
@@ -209,7 +209,7 @@
         <thead><tr>
           <th data-k="store">Store</th><th data-k="code">Code</th><th data-k="rm">RM</th><th data-k="cm">CM</th>
           <th data-k="state">State</th>
-          <th class="num" data-k="budT">Budget</th><th class="num" data-k="actT">Actual</th>
+          <th class="num" data-k="budT">Budget</th><th class="num" data-k="actT">Active</th>
           <th class="num" data-k="gap">Gap</th><th class="num" data-k="fill">Fill%</th>
           <th class="num" data-k="openT">Open</th><th data-k="align">Alignment</th>
         </tr></thead>
@@ -376,7 +376,14 @@ function applyFilters(){
 const sum=(a,f)=>a.reduce((s,x)=>s+f(x),0);
 
 /* ---------------- render ---------------- */
+/* Page 1 uses the LIVE Active roster as the source of truth for headcount:
+   each store's actual = count of active employees with that store code. */
+function applyRosterActuals(){
+  const m={};(SECTIONS.active||[]).forEach(e=>{const c=(e.code||'').trim();if(c)m[c]=(m[c]||0)+1;});
+  DATA.forEach(d=>{d.actT=m[d.code]||0;d.gap=d.budT-d.actT;d.fill=d.budT>0?Math.round(d.actT/d.budT*100):0;});
+}
 function renderAll(){
+  applyRosterActuals();
   fillSelect('fRM',[...new Set(DATA.map(d=>d.rm))].sort());
   fillSelect('fCM',[...new Set(DATA.map(d=>d.cm))].sort());
   fillSelect('fState',[...new Set(DATA.map(d=>d.state))].sort());
@@ -389,13 +396,10 @@ function stateBreak(F){const ka=F.filter(d=>d.state==='Karnataka').length;return
 function renderCards(F){
   const bud=sum(F,d=>d.budT),act=sum(F,d=>d.actT),gap=bud-act,open=sum(F,d=>d.openSum);
   const fill=bud?Math.round(act/bud*100):0,full=F.filter(d=>d.gap<=0).length,under=F.filter(d=>d.gap>0).length;
-  // Active count = live headcount from the Active roster (respects Page-1 store filters)
-  const codes=new Set(F.map(d=>d.code));
-  const activeCount=(SECTIONS.active||[]).filter(e=>codes.has((e.code||'').trim())).length;
   const c=[
     ['accent','Stores',F.length,stateBreak(F)],
     ['accent','Budgeted',bud,'sanctioned positions'],
-    ['','Active count',activeCount,'live from Active roster'],
+    ['','Active count',act,'live from Active roster'],
     ['','Fill rate',fill+'%',fillTag(fill)],
     ['danger','Total gap',gap,`${under} stores below budget`],
     ['danger','Open positions',open,'active vacancies'],
@@ -423,7 +427,7 @@ function renderMgr(elId,F,key){
   const g={};F.forEach(d=>{(g[d[key]]=g[d[key]]||{bud:0,act:0,gap:0,open:0,stores:0});
     const x=g[d[key]];x.bud+=d.budT;x.act+=d.actT;x.gap+=Math.max(0,d.gap);x.open+=d.openSum;x.stores++;});
   const rows=Object.entries(g).map(([k,v])=>({k,...v,fill:v.bud?Math.round(v.act/v.bud*100):0})).sort((a,b)=>a.fill-b.fill);
-  const head=`<thead><tr><th>${key==='rm'?'Regional Mgr':'Cluster Mgr'}</th><th>Stores</th><th>Bud</th><th>Act</th><th>Gap</th><th>Fill%</th></tr></thead>`;
+  const head=`<thead><tr><th>${key==='rm'?'Regional Mgr':'Cluster Mgr'}</th><th>Stores</th><th>Bud</th><th>Active</th><th>Gap</th><th>Fill%</th></tr></thead>`;
   const body=rows.map(r=>{
     const hc=r.fill>=98?'hl-good':r.fill>=90?'hl-warn':'hl-bad';
     return `<tr><td>${r.k}</td><td>${r.stores}</td><td>${r.bud}</td><td>${r.act}</td>
