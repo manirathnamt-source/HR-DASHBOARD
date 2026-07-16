@@ -92,6 +92,9 @@
   table.data td.num,table.data th.num{text-align:right;font-variant-numeric:tabular-nums}
   table.data tbody tr:hover{background:var(--paper2)}
   tr.clickrow{cursor:pointer}
+  tr.clickrow td:first-child{color:var(--maroon);font-weight:600;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+  tr.clickrow:hover td:first-child{text-decoration-color:var(--gold)}
+  tr.clickrow:hover{background:var(--goldsoft)!important}
   #buModal .box{max-width:440px}
   .strong{font-family:var(--serif);font-weight:800;font-size:15px}
   /* highlight chips ---------- */
@@ -206,7 +209,7 @@
   </div>
 
   <div class="panel">
-    <h3>All stores <span class="muted" id="allcount"></span></h3>
+    <h3>All stores <span class="muted" id="allcount"></span> <span class="muted" style="font-weight:400">— 👆 click any store for its status break-up</span></h3>
     <div class="scrollx">
       <table class="data" id="allTbl">
         <thead><tr>
