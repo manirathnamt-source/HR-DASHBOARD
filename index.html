@@ -92,6 +92,8 @@
   table.data td.num,table.data th.num{text-align:right;font-variant-numeric:tabular-nums}
   table.data tbody tr:hover{background:var(--paper2)}
   tr.clickrow{cursor:pointer}
+  .card.clickcard{cursor:pointer;transition:transform .08s,box-shadow .12s}
+  .card.clickcard:hover{transform:translateY(-2px);box-shadow:0 4px 10px rgba(90,50,30,.14),0 12px 30px rgba(90,50,30,.12)}
   tr.clickrow td:first-child{color:var(--maroon);font-weight:600;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
   tr.clickrow:hover td:first-child{text-decoration-color:var(--gold)}
   tr.clickrow:hover{background:var(--goldsoft)!important}
@@ -426,12 +428,35 @@ function renderCards(F){
     ['accent','Budgeted',bud,'sanctioned positions'],
     ['','Active count',act,'live from Active roster'],
     ['','Fill rate',fill+'%',fillTag(fill)],
-    ['danger','Total gap',-gap,`${under} stores below budget`],
+    ['danger','Total gap',-gap,`${under} stores below budget · 👆 tap for break-up`],
     ['danger','Open positions',open,'active vacancies'],
     ['','Fully staffed',full,`${F.length?Math.round(full/F.length*100):0}% of stores`],
   ];
   document.getElementById('cards').innerHTML=c.map(([cls,k,v,s])=>
-    `<div class="card ${cls}"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+    `<div class="card ${cls}${k==='Total gap'?' clickcard':''}" ${k==='Total gap'?'data-card="gap"':''}><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join('');
+  const gc=document.querySelector('#cards .card[data-card="gap"]');if(gc)gc.onclick=()=>openGapBreakup(F);
+}
+function openGapBreakup(F){
+  const codes=new Set(F.map(d=>d.code));
+  const bud={sm:0,asm:0,ssa:0,sa:0,oa:0},act={sm:0,asm:0,ssa:0,sa:0,oa:0};
+  F.forEach(d=>{ROLES.forEach(r=>bud[r]+=Number((d.bud||{})[r])||0);});
+  (SECTIONS.active||[]).forEach(e=>{if(!codes.has(e.code))return;const b=DESIG_BUCKET(e.desig);if(b)act[b]++;});
+  const roleRows=ROLES.map(r=>`<tr><td>${r.toUpperCase()}</td><td class="num">${bud[r]}</td><td class="num strong">${act[r]}</td><td class="num">${gapChip(bud[r]-act[r])}</td></tr>`).join('');
+  const byStatus={};(SECTIONS.rosterAll||[]).forEach(r=>{if(!codes.has(r.code))return;byStatus[r.status]=(byStatus[r.status]||0)+1;});
+  const order=['Active','Inactive','Maternity Leave','Long Leave','Transferred','Resigned','Absconded','Unknown'];
+  const skeys=Object.keys(byStatus).sort((a,c)=>(order.indexOf(a)+1||99)-(order.indexOf(c)+1||99));
+  const tot=Object.values(byStatus).reduce((a,b)=>a+b,0);
+  const statusRows=skeys.map(k=>`<tr><td>${esc(k)}</td><td class="num strong">${byStatus[k]}</td><td class="num">${tot?Math.round(byStatus[k]/tot*100):0}%</td></tr>`).join('')||'<tr><td colspan="3" style="color:var(--mut)">No roster rows</td></tr>';
+  const budT=sum(F,d=>d.budT),actT=sum(F,d=>d.actT);
+  document.getElementById('buTitle').textContent='Total gap break-up';
+  document.getElementById('buBody').innerHTML=`
+    <div style="margin:6px 0 12px;color:var(--mut)">Budget <b>${budT}</b> · Active <b>${actT}</b> · Gap <b style="color:var(--bad)">${actT-budT}</b> · ${F.length} stores</div>
+    <div style="font-weight:600;color:var(--maroon);margin:8px 0 4px">Gap by designation</div>
+    <table class="data"><thead><tr><th>Role</th><th class="num">Budget</th><th class="num">Active</th><th class="num">Gap</th></tr></thead><tbody>${roleRows}</tbody></table>
+    <div style="font-weight:600;color:var(--maroon);margin:14px 0 4px">Workforce status (these stores)</div>
+    <table class="data"><thead><tr><th>Status</th><th class="num">Count</th><th class="num">Share</th></tr></thead><tbody>${statusRows}</tbody></table>
+    <div class="footnote">Gap = Active − Budget (negative = short). Respects the filters above.</div>`;
+  document.getElementById('buModal').classList.add('show');
 }
 
 function renderHot(F){
